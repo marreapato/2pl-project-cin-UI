@@ -216,8 +216,10 @@ class App:
     def add_transaction(self):
         tid = self.next_tid
         start_time = self.start_time_entry.get().strip()
-        read_ops = self.read_ops_entry.get().strip()
-        write_ops = self.write_ops_entry.get().strip()
+        read_ops = self.read_ops_entry.get().strip().lower()
+        write_ops = self.write_ops_entry.get().strip().lower()
+
+        valid_items = {'x', 'y', 'z'}
 
         if not start_time:
             messagebox.showwarning("Input Error", "Start Time is required")
@@ -242,10 +244,16 @@ class App:
 
         if read_ops:
             for item in read_ops.split():
+                if item not in valid_items:
+                    messagebox.showwarning("Input Error", "Read operations must be x, y, or z")
+                    return
                 operations.append(('R', item))
 
         if write_ops:
             for item in write_ops.split():
+                if item not in valid_items:
+                    messagebox.showwarning("Input Error", "Write operations must be x, y, or z")
+                    return
                 operations.append(('W', item))
 
         self.transactions.append((trans, operations))
@@ -282,12 +290,10 @@ class App:
             execution_order = ", ".join([str(trans.tid) for trans, _ in self.transactions])
             self.display_scaling(f"Transactions executed in order: {execution_order}")
 
-            # Log transactions to the Log Disk
             for trans, operations in self.transactions:
                 operation_str = ', '.join([f"{op}({item})" for op, item in operations])
                 self.display_log_disk(f"Transaction {trans.tid} with operations: {operation_str} --commit--")
 
-            # Clear transactions after execution
             self.transactions.clear()
             self.lock_manager = LockManager(self.protocol_var.get())
             self.display_scaling("Transactions executed")
