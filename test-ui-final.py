@@ -40,7 +40,7 @@ class LockManager:
                     message_queue.put(f"Transaction {trans.tid} waits for {lock_type} lock on {item}")
                     self.wait_queue[item].put((trans, lock_type))
                 else:
-                    message_queue.put(f"Transaction {trans.tid} Waits (Wait-Die rule)")
+                    message_queue.put(f"Transaction {trans.tid} aborted (Wait-Die rule)")
                     self.abort_transaction(trans)
             elif self.protocol == "wound-wait":
                 if self.handle_wound_wait(trans, item):
@@ -180,13 +180,13 @@ class App:
         self.read_ops_label = tk.Label(self.transaction_frame, text="Read Operations (e.g., x y z):")
         self.read_ops_label.grid(row=1, column=0, columnspan=2, padx=5, pady=5)
 
-        self.read_ops_entry = ttk.Combobox(self.transaction_frame, values=['x','y','z'])
+        self.read_ops_entry = tk.Entry(self.transaction_frame)
         self.read_ops_entry.grid(row=1, column=2, columnspan=2, padx=5, pady=5)
 
         self.write_ops_label = tk.Label(self.transaction_frame, text="Write Operations (e.g., x y z):")
         self.write_ops_label.grid(row=2, column=0, columnspan=2, padx=5, pady=5)
 
-        self.write_ops_entry = ttk.Combobox(self.transaction_frame, values=['x','y','z'])
+        self.write_ops_entry = tk.Entry(self.transaction_frame)
         self.write_ops_entry.grid(row=2, column=2, columnspan=2, padx=5, pady=5)
 
         self.message_display = tk.Text(frame, height=10, width=80)
@@ -195,19 +195,19 @@ class App:
         self.log_display = tk.Text(frame, height=10, width=80, state=tk.DISABLED)
         self.log_display.grid(row=4, column=0, columnspan=4, pady=10)
 
-    def display_message_transactions(self, message):
+    def display_message(self, message):
         self.message_display.insert(tk.END, message + "\n")
         self.message_display.see(tk.END)
-        #self.log_display.config(state=tk.NORMAL)
-        #self.log_display.insert(tk.END, message + "\n")
-        #self.log_display.config(state=tk.DISABLED)
-        #self.log_display.see(tk.END)
+        self.log_display.config(state=tk.NORMAL)
+        self.log_display.insert(tk.END, message + "\n")
+        self.log_display.config(state=tk.DISABLED)
+        self.log_display.see(tk.END)
 
     def update_message_display(self):
         try:
             while True:
                 message = message_queue.get_nowait()
-                self.display_message_transactions(message)
+                self.display_message(message)
         except Empty:
             pass
         self.root.after(100, self.update_message_display)
@@ -221,7 +221,6 @@ class App:
         if not tid or not start_time:
             messagebox.showwarning("Input Error", "Transaction ID and Start Time are required")
             return
-        
 
         if not read_ops and not write_ops:
             messagebox.showwarning("Input Error", "Please provide at least one read or write operation")
@@ -231,6 +230,10 @@ class App:
             start_time = int(start_time)
         except ValueError:
             messagebox.showwarning("Input Error", "Start Time must be an integer")
+            return
+
+        if any(trans[0].start_time == start_time for trans in self.transactions):
+            messagebox.showwarning("Input Error", "Start Time must be unique")
             return
 
         trans = Transaction(tid, start_time)
@@ -257,7 +260,7 @@ class App:
         self.write_ops_entry.delete(0, tk.END)
 
         operation_str = ', '.join([f"{op}({item})" for op, item in operations])
-        self.display_message_transactions(f"Added Transaction {tid} with operations: {operation_str}")
+        self.display_message(f"Added Transaction {tid} with operations: {operation_str}")
 
     def execute_transactions(self):
         if not self.transactions:
@@ -283,7 +286,7 @@ class App:
     def clear_transactions(self):
         self.transactions.clear()
         self.lock_manager = LockManager(self.protocol_var.get())
-        self.display_message_transactions("Transactions cleared")
+        self.display_message("Transactions cleared")
 
     def clear_messages(self):
         self.message_display.delete(1.0, tk.END)
