@@ -122,6 +122,7 @@ def transaction_workflow(trans, operations, lock_manager):
                 read_item(trans, item, lock_manager)
             elif op == 'W':
                 write_item(trans, item, lock_manager)
+        message_queue.put(f"Transaction {trans.tid} --commit--")
     except Exception as e:
         message_queue.put(f"Exception in transaction {trans.tid}: {e}")
 
@@ -133,6 +134,7 @@ class App:
         self.protocol_var = tk.StringVar(value="wait-die")
         self.lock_manager = None
         self.transactions = []
+        self.next_tid = 1
 
         self.create_widgets()
         self.update_message_display()
@@ -159,23 +161,20 @@ class App:
         self.clear_trans_button = tk.Button(frame, text="Clear Transactions", command=self.clear_transactions)
         self.clear_trans_button.grid(row=1, column=2, pady=5)
 
-        self.clear_messages_button = tk.Button(frame, text="Clear Messages", command=self.clear_messages)
-        self.clear_messages_button.grid(row=1, column=3, pady=5)
+        self.clear_scaling_button = tk.Button(frame, text="Clear Scaling", command=self.clear_scaling)
+        self.clear_scaling_button.grid(row=1, column=3, pady=5)
+
+        self.clear_protocol_button = tk.Button(frame, text="Clear Protocol Messages", command=self.clear_protocol_messages)
+        self.clear_protocol_button.grid(row=1, column=4, pady=5)
 
         self.transaction_frame = tk.Frame(frame)
-        self.transaction_frame.grid(row=2, column=0, columnspan=4, pady=10)
-
-        self.trans_id_label = tk.Label(self.transaction_frame, text="Transaction ID:")
-        self.trans_id_label.grid(row=0, column=0, padx=5)
-
-        self.trans_id_entry = tk.Entry(self.transaction_frame)
-        self.trans_id_entry.grid(row=0, column=1, padx=5)
+        self.transaction_frame.grid(row=2, column=0, columnspan=5, pady=10)
 
         self.start_time_label = tk.Label(self.transaction_frame, text="Start Time:")
-        self.start_time_label.grid(row=0, column=2, padx=5)
+        self.start_time_label.grid(row=0, column=0, padx=5)
 
         self.start_time_entry = tk.Entry(self.transaction_frame)
-        self.start_time_entry.grid(row=0, column=3, padx=5)
+        self.start_time_entry.grid(row=0, column=1, padx=5)
 
         self.read_ops_label = tk.Label(self.transaction_frame, text="Read Operations (e.g., x y z):")
         self.read_ops_label.grid(row=1, column=0, columnspan=2, padx=5, pady=5)
@@ -189,37 +188,39 @@ class App:
         self.write_ops_entry = tk.Entry(self.transaction_frame)
         self.write_ops_entry.grid(row=2, column=2, columnspan=2, padx=5, pady=5)
 
-        self.message_display = tk.Text(frame, height=10, width=80)
-        self.message_display.grid(row=3, column=0, columnspan=4, pady=10)
+        self.scaling_display = tk.Text(frame, height=10, width=80)
+        self.scaling_display.grid(row=3, column=0, columnspan=5, pady=10)
 
-        self.log_display = tk.Text(frame, height=10, width=80, state=tk.DISABLED)
-        self.log_display.grid(row=4, column=0, columnspan=4, pady=10)
+        self.protocol_display = tk.Text(frame, height=10, width=80, state=tk.DISABLED)
+        self.protocol_display.grid(row=4, column=0, columnspan=5, pady=10)
+
+        self.log_disk_display = tk.Text(frame, height=10, width=80, state=tk.DISABLED)
+        self.log_disk_display.grid(row=5, column=0, columnspan=5, pady=10)
 
     def display_message(self, message):
-        self.message_display.insert(tk.END, message + "\n")
-        self.message_display.see(tk.END)
-        self.log_display.config(state=tk.NORMAL)
-        self.log_display.insert(tk.END, message + "\n")
-        self.log_display.config(state=tk.DISABLED)
-        self.log_display.see(tk.END)
+        self.protocol_display.config(state=tk.NORMAL)
+        self.protocol_display.insert(tk.END, message + "\n")
+        self.protocol_display.config(state=tk.DISABLED)
+        self.protocol_display.see(tk.END)
 
-    def update_message_display(self):
-        try:
-            while True:
-                message = message_queue.get_nowait()
-                self.display_message(message)
-        except Empty:
-            pass
-        self.root.after(100, self.update_message_display)
+    def display_scaling(self, message):
+        self.scaling_display.insert(tk.END, message + "\n")
+        self.scaling_display.see(tk.END)
+
+    def display_log_disk(self, message):
+        self.log_disk_display.config(state=tk.NORMAL)
+        self.log_disk_display.insert(tk.END, message + "\n")
+        self.log_disk_display.config(state=tk.DISABLED)
+        self.log_disk_display.see(tk.END)
 
     def add_transaction(self):
-        tid = self.trans_id_entry.get().strip()
+        tid = self.next_tid
         start_time = self.start_time_entry.get().strip()
         read_ops = self.read_ops_entry.get().strip()
         write_ops = self.write_ops_entry.get().strip()
 
-        if not tid or not start_time:
-            messagebox.showwarning("Input Error", "Transaction ID and Start Time are required")
+        if not start_time:
+            messagebox.showwarning("Input Error", "Start Time is required")
             return
 
         if not read_ops and not write_ops:
@@ -254,13 +255,14 @@ class App:
 
         self.lock_manager.add_transaction(trans)
 
-        self.trans_id_entry.delete(0, tk.END)
+        self.next_tid += 1
+
         self.start_time_entry.delete(0, tk.END)
         self.read_ops_entry.delete(0, tk.END)
         self.write_ops_entry.delete(0, tk.END)
 
         operation_str = ', '.join([f"{op}({item})" for op, item in operations])
-        self.display_message(f"Added Transaction {tid} with operations: {operation_str}")
+        self.display_scaling(f"Added Transaction {tid} with operations: {operation_str}, Start Time: {start_time}")
 
     def execute_transactions(self):
         if not self.transactions:
@@ -277,8 +279,18 @@ class App:
             for t in threads:
                 t.join()
 
+            execution_order = ", ".join([str(trans.tid) for trans, _ in self.transactions])
+            self.display_scaling(f"Transactions executed in order: {execution_order}")
+
+            # Log transactions to the Log Disk
+            for trans, operations in self.transactions:
+                operation_str = ', '.join([f"{op}({item})" for op, item in operations])
+                self.display_log_disk(f"Transaction {trans.tid} with operations: {operation_str} --commit--")
+
+            # Clear transactions after execution
             self.transactions.clear()
             self.lock_manager = LockManager(self.protocol_var.get())
+            self.display_scaling("Transactions executed")
 
         execution_thread = threading.Thread(target=run_transactions)
         execution_thread.start()
@@ -286,13 +298,25 @@ class App:
     def clear_transactions(self):
         self.transactions.clear()
         self.lock_manager = LockManager(self.protocol_var.get())
-        self.display_message("Transactions cleared")
+        self.next_tid = 1
+        self.display_scaling("Transactions cleared")
 
-    def clear_messages(self):
-        self.message_display.delete(1.0, tk.END)
-        self.log_display.config(state=tk.NORMAL)
-        self.log_display.delete(1.0, tk.END)
-        self.log_display.config(state=tk.DISABLED)
+    def clear_scaling(self):
+        self.scaling_display.delete(1.0, tk.END)
+
+    def clear_protocol_messages(self):
+        self.protocol_display.config(state=tk.NORMAL)
+        self.protocol_display.delete(1.0, tk.END)
+        self.protocol_display.config(state=tk.DISABLED)
+
+    def update_message_display(self):
+        try:
+            while True:
+                message = message_queue.get_nowait()
+                self.display_message(message)
+        except Empty:
+            pass
+        self.root.after(100, self.update_message_display)
 
 if __name__ == "__main__":
     root = tk.Tk()
