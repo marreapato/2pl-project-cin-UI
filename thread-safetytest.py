@@ -76,11 +76,7 @@ class LockManager:
             self.grant_lock(next_trans, item, lock_type)
 
     def handle_wait_die(self, trans, item):
-        if self.lock_table[item] == 'W':
-            holding_trans_tid = self.locks[item][0]
-        else:
-            holding_trans_tid = min(self.locks[item], key=lambda tid: self.transactions[tid].start_time)
-
+        holding_trans_tid = min(self.locks[item], key=lambda tid: self.transactions[tid].start_time)
         holding_trans = self.transactions[holding_trans_tid]
 
         if trans.start_time < holding_trans.start_time:
@@ -89,16 +85,12 @@ class LockManager:
             return True  # Wait
 
     def handle_wound_wait(self, trans, item):
-        if self.lock_table[item] == 'W':
-            holding_trans_tid = self.locks[item][0]
-        else:
-            holding_trans_tid = min(self.locks[item], key=lambda tid: self.transactions[tid].start_time)
-
+        holding_trans_tid = min(self.locks[item], key=lambda tid: self.transactions[tid].start_time)
         holding_trans = self.transactions[holding_trans_tid]
 
         if trans.start_time < holding_trans.start_time:
             self.abort_transaction(holding_trans)
-            return True
+            return True  # Wound
         else:
             return False  # Wait
 
@@ -139,6 +131,7 @@ class App:
         self.lock_manager = None
         self.transactions = []
         self.next_tid = 1
+        self.current_operations = []
 
         self.create_widgets()
         self.update_message_display()
@@ -174,23 +167,24 @@ class App:
         self.transaction_frame = tk.Frame(frame)
         self.transaction_frame.grid(row=2, column=0, columnspan=5, pady=10)
 
-        self.start_time_label = tk.Label(self.transaction_frame, text="Start Time:")
-        self.start_time_label.grid(row=0, column=0, padx=5)
+        self.op_label = tk.Label(self.transaction_frame, text="Operation:")
+        self.op_label.grid(row=0, column=0, padx=5)
 
-        self.start_time_entry = tk.Entry(self.transaction_frame)
-        self.start_time_entry.grid(row=0, column=1, padx=5)
+        self.op_combo = ttk.Combobox(self.transaction_frame, values=["R", "W"])
+        self.op_combo.grid(row=0, column=1, padx=5)
+        self.op_combo.current(0)
 
-        self.read_ops_label = tk.Label(self.transaction_frame, text="Read Operations (e.g., x y z):")
-        self.read_ops_label.grid(row=1, column=0, columnspan=2, padx=5, pady=5)
+        self.item_label = tk.Label(self.transaction_frame, text="Item:")
+        self.item_label.grid(row=0, column=2, padx=5)
 
-        self.read_ops_entry = tk.Entry(self.transaction_frame)
-        self.read_ops_entry.grid(row=1, column=2, columnspan=2, padx=5, pady=5)
+        self.item_entry = tk.Entry(self.transaction_frame)
+        self.item_entry.grid(row=0, column=3, padx=5)
 
-        self.write_ops_label = tk.Label(self.transaction_frame, text="Write Operations (e.g., x y z):")
-        self.write_ops_label.grid(row=2, column=0, columnspan=2, padx=5, pady=5)
+        self.add_op_button = tk.Button(self.transaction_frame, text="Add Operation", command=self.add_operation)
+        self.add_op_button.grid(row=0, column=4, padx=5)
 
-        self.write_ops_entry = tk.Entry(self.transaction_frame)
-        self.write_ops_entry.grid(row=2, column=2, columnspan=2, padx=5, pady=5)
+        self.operations_listbox = tk.Listbox(self.transaction_frame)
+        self.operations_listbox.grid(row=1, column=0, columnspan=5, pady=10)
 
         self.scaling_display = tk.Text(frame, height=10, width=80)
         self.scaling_display.grid(row=3, column=0, columnspan=5, pady=10)
@@ -217,48 +211,29 @@ class App:
         self.log_disk_display.config(state=tk.DISABLED)
         self.log_disk_display.see(tk.END)
 
+    def add_operation(self):
+        operation = self.op_combo.get()
+        item = self.item_entry.get().strip().lower()
+
+        if item not in {'x', 'y', 'z'}:
+            messagebox.showwarning("Input Error", "Item must be x, y, or z")
+            return
+
+        self.current_operations.append((operation, item))
+        self.operations_listbox.insert(tk.END, f"{operation}({item})")
+
     def add_transaction(self):
         tid = self.next_tid
-        start_time = self.start_time_entry.get().strip()
-        read_ops = self.read_ops_entry.get().strip().lower()
-        write_ops = self.write_ops_entry.get().strip().lower()
+        start_time = tid
 
-        valid_items = {'x', 'y', 'z'}
-
-        if not start_time:
-            messagebox.showwarning("Input Error", "Start Time is required")
-            return
-
-        if not read_ops and not write_ops:
-            messagebox.showwarning("Input Error", "Please provide at least one read or write operation")
-            return
-
-        try:
-            start_time = int(start_time)
-        except ValueError:
-            messagebox.showwarning("Input Error", "Start Time must be an integer")
-            return
-
-        if any(trans[0].start_time == start_time for trans in self.transactions):
-            messagebox.showwarning("Input Error", "Start Time must be unique")
+        if not self.current_operations:
+            messagebox.showwarning("Input Error", "Please add at least one operation")
             return
 
         trans = Transaction(tid, start_time)
-        operations = []
-
-        if read_ops:
-            for item in read_ops.split():
-                if item not in valid_items:
-                    messagebox.showwarning("Input Error", "Read operations must be x, y, or z")
-                    return
-                operations.append(('R', item))
-
-        if write_ops:
-            for item in write_ops.split():
-                if item not in valid_items:
-                    messagebox.showwarning("Input Error", "Write operations must be x, y, or z")
-                    return
-                operations.append(('W', item))
+        operations = self.current_operations[:]
+        self.current_operations.clear()
+        self.operations_listbox.delete(0, tk.END)
 
         self.transactions.append((trans, operations))
 
@@ -268,10 +243,6 @@ class App:
         self.lock_manager.add_transaction(trans)
 
         self.next_tid += 1
-
-        self.start_time_entry.delete(0, tk.END)
-        self.read_ops_entry.delete(0, tk.END)
-        self.write_ops_entry.delete(0, tk.END)
 
         operation_str = ', '.join([f"{op}({item})" for op, item in operations])
         self.display_scaling(f"Added Transaction {tid} with operations: {operation_str}, Start Time: {start_time}")
