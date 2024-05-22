@@ -93,10 +93,12 @@ class LockManager:
         holding_trans = self.transactions[holding_trans_tid]
 
         if trans.start_time < holding_trans.start_time:
-            self.abort_transaction(holding_trans)  # Older transaction wounds younger
+            # If the older transaction is requesting, abort the younger transaction
+            self.abort_transaction(holding_trans)
             return True
         else:
-            return False  # Younger transaction waits
+            # If the younger transaction is requesting, it waits
+            return False
 
     def abort_transaction(self, trans):
         for item in list(trans.locks_held):
