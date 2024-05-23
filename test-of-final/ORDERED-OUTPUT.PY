@@ -37,18 +37,18 @@ class LockManager:
         else:
             if self.protocol == "wait-die":
                 if self.handle_wait_die(trans, item):
-                    self.wait_queue[item].put((trans, lock_type))
                     message_queue.put(f"Transaction {trans.tid} waits for {lock_type} lock on {item}")
+                    self.wait_queue[item].put((trans, lock_type))
                 else:
-                    self.abort_transaction(trans)
                     message_queue.put(f"Transaction {trans.tid} aborted (Wait-Die rule)")
+                    self.abort_transaction(trans)
             elif self.protocol == "wound-wait":
                 if self.handle_wound_wait(trans, item):
-                    self.wait_queue[item].put((trans, lock_type))
                     message_queue.put(f"Transaction {trans.tid} waits for {lock_type} lock on {item}")
+                    self.wait_queue[item].put((trans, lock_type))
                 else:
-                    self.abort_transaction(trans)
                     message_queue.put(f"Transaction {trans.tid} aborted (Wound-Wait rule)")
+                    self.abort_transaction(trans)
 
     def grant_lock(self, trans, item, lock_type):
         self.locks[item].append(trans.tid)
@@ -178,8 +178,11 @@ class App:
         self.clear_protocol_button = tk.Button(right_frame, text="Clear Protocol Messages", command=self.clear_protocol_messages)
         self.clear_protocol_button.grid(row=1, column=3, pady=5)
 
+        self.clear_operations_button = tk.Button(right_frame, text="Clear Operations", command=self.clear_operations)
+        self.clear_operations_button.grid(row=1, column=4, pady=5)
+
         self.transaction_frame = tk.Frame(right_frame)
-        self.transaction_frame.grid(row=2, column=0, columnspan=4, pady=10)
+        self.transaction_frame.grid(row=2, column=0, columnspan=5, pady=10)
 
         self.operation_label = tk.Label(self.transaction_frame, text="Select Operation:")
         self.operation_label.grid(row=0, column=0, padx=5, pady=5)
@@ -197,13 +200,13 @@ class App:
         self.add_op_button.grid(row=0, column=4, padx=5, pady=5)
 
         self.scaling_display = tk.Text(right_frame, height=10, width=80)
-        self.scaling_display.grid(row=3, column=0, columnspan=4, pady=10)
+        self.scaling_display.grid(row=3, column=0, columnspan=5, pady=10)
 
         self.protocol_display = tk.Text(right_frame, height=10, width=80, state=tk.DISABLED)
-        self.protocol_display.grid(row=4, column=0, columnspan=4, pady=10)
+        self.protocol_display.grid(row=4, column=0, columnspan=5, pady=10)
 
         self.log_disk_display = tk.Text(right_frame, height=10, width=80, state=tk.DISABLED)
-        self.log_disk_display.grid(row=5, column=0, columnspan=4, pady=10)
+        self.log_disk_display.grid(row=5, column=0, columnspan=5, pady=10)
 
     def update_protocol(self):
         self.lock_manager = LockManager(self.protocol_var.get())
@@ -247,6 +250,10 @@ class App:
         self.operation_combo.set("")
         self.operations_display.insert(tk.END, f"{operation}({item})\n")
         self.operations_display.see(tk.END)
+
+    def clear_operations(self):
+        self.current_operations.clear()
+        self.operations_display.delete(1.0, tk.END)
 
     def add_transaction(self):
         tid = self.next_tid
