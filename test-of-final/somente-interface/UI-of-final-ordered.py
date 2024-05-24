@@ -71,14 +71,24 @@ class App:
         self.add_op_button = tk.Button(self.transaction_frame, text="Add Operation")
         self.add_op_button.grid(row=0, column=4, padx=5, pady=5)
 
+        # Titles for the displays
+        scaling_label = tk.Label(right_frame, text="Log Memory/Scaling:")
+        scaling_label.grid(row=3, column=0, columnspan=5, pady=(10, 0))
+
         self.scaling_display = tk.Text(right_frame, height=10, width=80)
-        self.scaling_display.grid(row=3, column=0, columnspan=5, pady=10)
+        self.scaling_display.grid(row=4, column=0, columnspan=5, pady=10)
+
+        protocol_label = tk.Label(right_frame, text="Protocol Behavior Messages:")
+        protocol_label.grid(row=5, column=0, columnspan=5, pady=(10, 0))
 
         self.protocol_display = tk.Text(right_frame, height=10, width=80, state=tk.DISABLED)
-        self.protocol_display.grid(row=4, column=0, columnspan=5, pady=10)
+        self.protocol_display.grid(row=6, column=0, columnspan=5, pady=10)
+
+        log_disk_label = tk.Label(right_frame, text="Log Disk:")
+        log_disk_label.grid(row=7, column=0, columnspan=5, pady=(10, 0))
 
         self.log_disk_display = tk.Text(right_frame, height=10, width=80, state=tk.DISABLED)
-        self.log_disk_display.grid(row=5, column=0, columnspan=5, pady=10)
+        self.log_disk_display.grid(row=8, column=0, columnspan=5, pady=10)
 
 if __name__ == "__main__":
     root = tk.Tk()
