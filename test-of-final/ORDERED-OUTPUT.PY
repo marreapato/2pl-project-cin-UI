@@ -14,6 +14,7 @@ class Transaction:
         self.tid = tid
         self.start_time = start_time
         self.locks_held = set()
+        self.aborted_operations = []
 
 # LockManager class
 class LockManager:
@@ -107,8 +108,12 @@ class LockManager:
             return False  # Younger transaction waits
 
     def abort_transaction(self, trans):
+        aborted_operations = []
         for item in list(trans.locks_held):
             self.release_lock(trans, item)
+            # Save the aborted operations for later re-execution
+            aborted_operations.append(('release', item))
+        trans.aborted_operations.extend(aborted_operations)
         message_queue.put(f"Transaction {trans.tid} aborted")
 
 def read_item(trans, item, lock_manager):
@@ -132,6 +137,16 @@ def transaction_workflow(trans, operations, lock_manager):
                 write_item(trans, item, lock_manager)
     except Exception as e:
         message_queue.put(f"Exception in transaction {trans.tid}: {e}")
+
+    # Re-execute aborted operations if any
+    if lock_manager.protocol == "wound-wait" and trans.aborted_operations:
+        message_queue.put(f"Transaction {trans.tid} re-executing aborted operations")
+        for op, item in trans.aborted_operations:
+            if op == 'R':
+                read_item(trans, item, lock_manager)
+            elif op == 'W':
+                write_item(trans, item, lock_manager)
+        trans.aborted_operations.clear()
 
 class App:
     def __init__(self, root):
@@ -191,23 +206,19 @@ class App:
         self.transaction_frame.grid(row=2, column=0, columnspan=5, pady=10)
 
         self.operation_label = tk.Label(self.transaction_frame, text="Select Operation:")
-        self.operation_label.grid(row=0, column=0, padx=5, pady=5)
+        self.operation_label.grid(row=0, column=0)
 
         self.operation_combo = ttk.Combobox(self.transaction_frame, values=["R", "W"])
-        self.operation_combo.grid(row=0, column=1, padx=5, pady=5)
+        self.operation_combo.grid(row=0, column=1)
 
-        self.item_label = tk.Label(self.transaction_frame, text="Item (x, y, or z):")
-        self.item_label.grid(row=0, column=2, padx=5, pady=5)
+        self.item_label = tk.Label(self.transaction_frame, text="Item (x, y, z):")
+        self.item_label.grid(row=0, column=2)
 
         self.item_entry = tk.Entry(self.transaction_frame)
-        self.item_entry.grid(row=0, column=3, padx=5, pady=5)
+        self.item_entry.grid(row=0, column=3)
 
-        self.add_op_button = tk.Button(self.transaction_frame, text="Add Operation", command=self.add_operation)
-        self.add_op_button.grid(row=0, column=4, padx=5, pady=5)
-
-        # Titles for the displays
-        scaling_label = tk.Label(right_frame, text="Log Memory/Scaling:")
-        scaling_label.grid(row=3, column=0, columnspan=5, pady=(10, 0))
+        self.add_operation_button = tk.Button(self.transaction_frame, text="Add Operation", command=self.add_operation)
+        self.add_operation_button.grid(row=0, column=4)
 
         self.scaling_display = tk.Text(right_frame, height=10, width=80)
         self.scaling_display.grid(row=4, column=0, columnspan=5, pady=10)
