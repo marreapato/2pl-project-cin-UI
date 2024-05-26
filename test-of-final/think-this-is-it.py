@@ -14,7 +14,6 @@ class Transaction:
         self.tid = tid
         self.start_time = start_time
         self.locks_held = set()
-        self.aborted = False  # Track if the transaction has been aborted
 
 # LockManager class
 class LockManager:
@@ -44,14 +43,10 @@ class LockManager:
                     message_queue.put(f"Transaction {trans.tid} aborted (Wait-Die rule)")
                     self.abort_transaction(trans)
             elif self.protocol == "wound-wait":
-                if self.handle_wound_wait(trans, item):
-                    message_queue.put(f"Transaction {trans.tid} waits for {lock_type} lock on {item}")
-                    self.wait_queue[item].put((trans, lock_type))
+                if self.handle_wound_wait(trans, item, lock_type):
+                    self.grant_lock(trans, item, lock_type)
                 else:
-                    message_queue.put(f"Transaction {trans.tid} aborted (Wound-Wait rule)")
-                    self.abort_transaction(trans)
-                    # Ensure aborted transaction waits for the item to be released
-                    trans.aborted = True
+                    message_queue.put(f"Transaction {trans.tid} waits for {lock_type} lock on {item}")
                     self.wait_queue[item].put((trans, lock_type))
 
     def grant_lock(self, trans, item, lock_type):
@@ -71,11 +66,12 @@ class LockManager:
             message_queue.put(f"Transaction {trans.tid} released lock on {item}")
 
     def promote_locks(self, item):
-        while not self.wait_queue[item].empty():
+        if not self.wait_queue[item].empty():
             next_trans, lock_type = self.wait_queue[item].get()
-            if not next_trans.aborted:
+            if self.protocol == "wound-wait":
+                self.request_lock(next_trans, item, lock_type)
+            else:
                 self.grant_lock(next_trans, item, lock_type)
-                break
 
     def handle_wait_die(self, trans, item):
         if self.lock_table[item] == 'W':
@@ -90,7 +86,7 @@ class LockManager:
         else:
             return False  # Younger transaction dies
 
-    def handle_wound_wait(self, trans, item):
+    def handle_wound_wait(self, trans, item, lock_type):
         if self.lock_table[item] == 'W':
             holding_trans_tid = self.locks[item][0]
         else:
@@ -99,13 +95,16 @@ class LockManager:
         holding_trans = self.transactions[holding_trans_tid]
 
         if trans.start_time < holding_trans.start_time:
-            # If the older transaction is requesting, abort the younger transaction
-            message_queue.put(f"Transaction {holding_trans_tid} aborted by Transaction {trans.tid} (Wound-Wait rule)")
-            self.abort_transaction(holding_trans)
-            return True
+            if lock_type == 'W':
+                # Older transaction wounds the younger transaction
+                message_queue.put(f"Transaction {holding_trans.tid} aborted (Wound-Wait rule)")
+                self.abort_transaction(holding_trans)
+                return True  # Older transaction gets the lock
+            else:
+                # If the older transaction is requesting a read lock, it waits
+                return False
         else:
-            # If the younger transaction is requesting, it waits
-            return False
+            return False  # Younger transaction waits
 
     def abort_transaction(self, trans):
         for item in list(trans.locks_held):
@@ -296,6 +295,10 @@ class App:
         operation_str = ', '.join([f"{op}({item})" for op, item in operations])
         self.display_scaling(f"Added Transaction {tid} with operations: {operation_str}, Start Time: {start_time}")
 
+        # Disable protocol selection radio buttons
+        self.wait_die_radio.config(state=tk.DISABLED)
+        self.wound_wait_radio.config(state=tk.DISABLED)
+
     def execute_transactions(self):
         if not self.transactions:
             messagebox.showwarning("Execution Error", "No transactions to execute")
@@ -323,6 +326,10 @@ class App:
             self.transactions.clear()
             self.lock_manager = LockManager(self.protocol_var.get())
             self.next_tid = 1
+
+            # Re-enable protocol selection radio buttons
+            self.wait_die_radio.config(state=tk.NORMAL)
+            self.wound_wait_radio.config(state=tk.NORMAL)
 
         execution_thread = threading.Thread(target=run_transactions)
         execution_thread.start()
