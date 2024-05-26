@@ -114,7 +114,21 @@ class LockManager:
             # Save the aborted operations for later re-execution
             aborted_operations.append(('release', item))
         trans.aborted_operations.extend(aborted_operations)
-        message_queue.put(f"Transaction {trans.tid} aborted")
+        message_queue.put(f"Transaction {trans.tid} aborted (aborted)")
+        message_queue.put(f"Transaction {trans.tid} re-executing aborted operations")
+        self.re_execute_aborted_operations(trans)
+
+    def re_execute_aborted_operations(self, trans):
+        def run_aborted_operations():
+            time.sleep(0.1)  # Simulate delay before re-execution
+            for op, item in trans.aborted_operations:
+                if op == 'R':
+                    read_item(trans, item, self)
+                elif op == 'W':
+                    write_item(trans, item, self)
+            trans.aborted_operations.clear()
+
+        threading.Thread(target=run_aborted_operations).start()
 
 def read_item(trans, item, lock_manager):
     lock_manager.request_lock(trans, item, 'R')
@@ -137,16 +151,6 @@ def transaction_workflow(trans, operations, lock_manager):
                 write_item(trans, item, lock_manager)
     except Exception as e:
         message_queue.put(f"Exception in transaction {trans.tid}: {e}")
-
-    # Re-execute aborted operations if any
-    if lock_manager.protocol == "wound-wait" and trans.aborted_operations:
-        message_queue.put(f"Transaction {trans.tid} re-executing aborted operations")
-        for op, item in trans.aborted_operations:
-            if op == 'R':
-                read_item(trans, item, lock_manager)
-            elif op == 'W':
-                write_item(trans, item, lock_manager)
-        trans.aborted_operations.clear()
 
 class App:
     def __init__(self, root):
