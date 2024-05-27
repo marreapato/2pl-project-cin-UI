@@ -14,6 +14,7 @@ class Transaction:
         self.tid = tid
         self.start_time = start_time
         self.locks_held = set()
+        self.aborted_operations = []
 
 # LockManager class
 class LockManager:
@@ -95,21 +96,39 @@ class LockManager:
         holding_trans = self.transactions[holding_trans_tid]
 
         if trans.start_time < holding_trans.start_time:
-            if lock_type == 'W':
+            if lock_type == 'W' or self.lock_table[item] == 'W':
                 # Older transaction wounds the younger transaction
                 message_queue.put(f"Transaction {holding_trans.tid} aborted (Wound-Wait rule)")
                 self.abort_transaction(holding_trans)
                 return True  # Older transaction gets the lock
             else:
                 # If the older transaction is requesting a read lock, it waits
-                return False
+                return True
         else:
             return False  # Younger transaction waits
 
     def abort_transaction(self, trans):
+        aborted_operations = []
         for item in list(trans.locks_held):
             self.release_lock(trans, item)
-        message_queue.put(f"Transaction {trans.tid} aborted")
+            # Save the aborted operations for later re-execution
+            aborted_operations.append(('release', item))
+        trans.aborted_operations.extend(aborted_operations)
+        message_queue.put(f"Transaction {trans.tid} aborted (aborted)")
+        message_queue.put(f"Transaction {trans.tid} re-executing aborted operations")
+        self.re_execute_aborted_operations(trans)
+
+    def re_execute_aborted_operations(self, trans):
+        def run_aborted_operations():
+            time.sleep(0.1)  # Simulate delay before re-execution
+            for op, item in trans.aborted_operations:
+                if op == 'R':
+                    read_item(trans, item, self)
+                elif op == 'W':
+                    write_item(trans, item, self)
+            trans.aborted_operations.clear()
+
+        threading.Thread(target=run_aborted_operations).start()
 
 def read_item(trans, item, lock_manager):
     lock_manager.request_lock(trans, item, 'R')
@@ -191,23 +210,26 @@ class App:
         self.transaction_frame.grid(row=2, column=0, columnspan=5, pady=10)
 
         self.operation_label = tk.Label(self.transaction_frame, text="Select Operation:")
-        self.operation_label.grid(row=0, column=0, padx=5, pady=5)
+        self.operation_label.grid(row=0, column=0)
 
         self.operation_combo = ttk.Combobox(self.transaction_frame, values=["R", "W"])
-        self.operation_combo.grid(row=0, column=1, padx=5, pady=5)
+        self.operation_combo.grid(row=0, column=1)
 
-        self.item_label = tk.Label(self.transaction_frame, text="Item (x, y, or z):")
-        self.item_label.grid(row=0, column=2, padx=5, pady=5)
+        self.item_label = tk.Label(self.transaction_frame, text="Item (x, y, z):")
+        self.item_label.grid(row=0, column=2)
 
         self.item_entry = tk.Entry(self.transaction_frame)
-        self.item_entry.grid(row=0, column=3, padx=5, pady=5)
+        self.item_entry.grid(row=0, column=3)
 
-        self.add_op_button = tk.Button(self.transaction_frame, text="Add Operation", command=self.add_operation)
-        self.add_op_button.grid(row=0, column=4, padx=5, pady=5)
+        self.lock_type_var = tk.StringVar(value="R")
+        self.shared_lock_radio = tk.Radiobutton(self.transaction_frame, text="Shared Lock (R)", variable=self.lock_type_var, value="R")
+        self.shared_lock_radio.grid(row=0, column=4)
 
-        # Titles for the displays
-        scaling_label = tk.Label(right_frame, text="Log Memory/Scaling:")
-        scaling_label.grid(row=3, column=0, columnspan=5, pady=(10, 0))
+        self.exclusive_lock_radio = tk.Radiobutton(self.transaction_frame, text="Exclusive Lock (W)", variable=self.lock_type_var, value="W")
+        self.exclusive_lock_radio.grid(row=0, column=5)
+
+        self.add_operation_button = tk.Button(self.transaction_frame, text="Add Operation", command=self.add_operation)
+        self.add_operation_button.grid(row=0, column=6)
 
         self.scaling_display = tk.Text(right_frame, height=10, width=80)
         self.scaling_display.grid(row=4, column=0, columnspan=5, pady=10)
@@ -232,6 +254,8 @@ class App:
         self.scaling_display.see(tk.END)
 
     def display_message(self, message):
+        if "waits" in message and self.protocol_var.get() == "wound-wait" and "older" in message:
+            return
         self.protocol_display.config(state=tk.NORMAL)
         self.protocol_display.insert(tk.END, message + "\n")
         self.protocol_display.config(state=tk.DISABLED)
@@ -246,6 +270,7 @@ class App:
     def add_operation(self):
         operation = self.operation_combo.get().strip().upper()
         item = self.item_entry.get().strip().lower()
+        lock_type = self.lock_type_var.get()
 
         valid_items = {'x', 'y', 'z'}
 
@@ -257,6 +282,14 @@ class App:
             messagebox.showwarning("Input Error", "Item must be x, y, or z")
             return
 
+        if operation == 'R' and lock_type != 'R':
+            messagebox.showwarning("Input Error", "Read operations can only have a shared lock (R)")
+            return
+
+        if operation == 'W' and lock_type != 'W':
+            messagebox.showwarning("Input Error", "Write operations can only have an exclusive lock (W)")
+            return
+
         if len(self.current_operations) >= 2:
             messagebox.showwarning("Input Error", "You can only add up to 2 operations")
             return
@@ -264,7 +297,8 @@ class App:
         self.current_operations.append((operation, item))
         self.item_entry.delete(0, tk.END)
         self.operation_combo.set("")
-        self.operations_display.insert(tk.END, f"{operation}({item})\n")
+        self.lock_type_var.set("R")
+        self.operations_display.insert(tk.END, f"{operation}({item}) [{lock_type}]\n")
         self.operations_display.see(tk.END)
 
     def clear_operations(self):
