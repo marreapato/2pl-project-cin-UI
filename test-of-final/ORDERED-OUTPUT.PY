@@ -96,14 +96,14 @@ class LockManager:
         holding_trans = self.transactions[holding_trans_tid]
 
         if trans.start_time < holding_trans.start_time:
-            if lock_type == 'W':
+            if lock_type == 'W' or self.lock_table[item] == 'W':
                 # Older transaction wounds the younger transaction
                 message_queue.put(f"Transaction {holding_trans.tid} aborted (Wound-Wait rule)")
                 self.abort_transaction(holding_trans)
                 return True  # Older transaction gets the lock
             else:
                 # If the older transaction is requesting a read lock, it waits
-                return False
+                return True
         else:
             return False  # Younger transaction waits
 
@@ -247,6 +247,8 @@ class App:
         self.scaling_display.see(tk.END)
 
     def display_message(self, message):
+        if "waits" in message and self.protocol_var.get() == "wound-wait" and "older" in message:
+            return
         self.protocol_display.config(state=tk.NORMAL)
         self.protocol_display.insert(tk.END, message + "\n")
         self.protocol_display.config(state=tk.DISABLED)
@@ -370,4 +372,3 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = App(root)
     root.mainloop()
-
