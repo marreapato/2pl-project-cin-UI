@@ -221,8 +221,15 @@ class App:
         self.item_entry = tk.Entry(self.transaction_frame)
         self.item_entry.grid(row=0, column=3)
 
+        self.lock_type_var = tk.StringVar(value="R")
+        self.shared_lock_radio = tk.Radiobutton(self.transaction_frame, text="Shared Lock (R)", variable=self.lock_type_var, value="R")
+        self.shared_lock_radio.grid(row=0, column=4)
+
+        self.exclusive_lock_radio = tk.Radiobutton(self.transaction_frame, text="Exclusive Lock (W)", variable=self.lock_type_var, value="W")
+        self.exclusive_lock_radio.grid(row=0, column=5)
+
         self.add_operation_button = tk.Button(self.transaction_frame, text="Add Operation", command=self.add_operation)
-        self.add_operation_button.grid(row=0, column=4)
+        self.add_operation_button.grid(row=0, column=6)
 
         self.scaling_display = tk.Text(right_frame, height=10, width=80)
         self.scaling_display.grid(row=4, column=0, columnspan=5, pady=10)
@@ -263,6 +270,7 @@ class App:
     def add_operation(self):
         operation = self.operation_combo.get().strip().upper()
         item = self.item_entry.get().strip().lower()
+        lock_type = self.lock_type_var.get()
 
         valid_items = {'x', 'y', 'z'}
 
@@ -274,6 +282,14 @@ class App:
             messagebox.showwarning("Input Error", "Item must be x, y, or z")
             return
 
+        if operation == 'R' and lock_type != 'R':
+            messagebox.showwarning("Input Error", "Read operations can only have a shared lock (R)")
+            return
+
+        if operation == 'W' and lock_type != 'W':
+            messagebox.showwarning("Input Error", "Write operations can only have an exclusive lock (W)")
+            return
+
         if len(self.current_operations) >= 2:
             messagebox.showwarning("Input Error", "You can only add up to 2 operations")
             return
@@ -281,7 +297,8 @@ class App:
         self.current_operations.append((operation, item))
         self.item_entry.delete(0, tk.END)
         self.operation_combo.set("")
-        self.operations_display.insert(tk.END, f"{operation}({item})\n")
+        self.lock_type_var.set("R")
+        self.operations_display.insert(tk.END, f"{operation}({item}) [{lock_type}]\n")
         self.operations_display.see(tk.END)
 
     def clear_operations(self):
